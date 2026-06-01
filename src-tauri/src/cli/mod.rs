@@ -1097,6 +1097,105 @@ mod tests {
     }
 
     #[test]
+    fn parses_mcp_enable_with_apps() {
+        let cli = Cli::parse_from(["cc-switch", "mcp", "enable", "s1", "--apps", "claude,codex"]);
+
+        match cli.command {
+            Some(Commands::Mcp(super::commands::mcp::McpCommand::Enable { id, apps })) => {
+                assert_eq!(id, "s1");
+                assert_eq!(apps, vec!["claude", "codex"]);
+            }
+            _ => panic!("expected mcp enable command"),
+        }
+    }
+
+    #[test]
+    fn parses_mcp_set_apps_repeated_flags() {
+        let cli = Cli::parse_from([
+            "cc-switch",
+            "mcp",
+            "set-apps",
+            "s1",
+            "--apps",
+            "opencode",
+            "--apps",
+            "hermes",
+        ]);
+
+        match cli.command {
+            Some(Commands::Mcp(super::commands::mcp::McpCommand::SetApps { id, apps })) => {
+                assert_eq!(id, "s1");
+                assert_eq!(apps, vec!["opencode", "hermes"]);
+            }
+            _ => panic!("expected mcp set-apps command"),
+        }
+    }
+
+    #[test]
+    fn parses_skills_enable_with_apps() {
+        let cli = Cli::parse_from(["cc-switch", "skills", "enable", "hello", "--apps", "codex"]);
+
+        match cli.command {
+            Some(Commands::Skills(super::commands::skills::SkillsCommand::Enable {
+                spec,
+                apps,
+            })) => {
+                assert_eq!(spec, "hello");
+                assert_eq!(apps, vec!["codex"]);
+            }
+            _ => panic!("expected skills enable command"),
+        }
+    }
+
+    #[test]
+    fn parses_skills_set_apps_repeated_flags() {
+        let cli = Cli::parse_from([
+            "cc-switch",
+            "skills",
+            "set-apps",
+            "hello",
+            "--apps",
+            "claude",
+            "--apps",
+            "hermes",
+        ]);
+
+        match cli.command {
+            Some(Commands::Skills(super::commands::skills::SkillsCommand::SetApps {
+                spec,
+                apps,
+            })) => {
+                assert_eq!(spec, "hello");
+                assert_eq!(apps, vec!["claude", "hermes"]);
+            }
+            _ => panic!("expected skills set-apps command"),
+        }
+    }
+
+    #[test]
+    fn parses_skills_import_from_apps_apps_before_directory() {
+        let cli = Cli::parse_from([
+            "cc-switch",
+            "skills",
+            "import-from-apps",
+            "--apps",
+            "claude,codex",
+            "hello-skill",
+        ]);
+
+        match cli.command {
+            Some(Commands::Skills(super::commands::skills::SkillsCommand::ImportFromApps {
+                apps,
+                directories,
+            })) => {
+                assert_eq!(apps, vec!["claude", "codex"]);
+                assert_eq!(directories, vec!["hello-skill"]);
+            }
+            _ => panic!("expected skills import-from-apps command"),
+        }
+    }
+
+    #[test]
     fn parses_skills_repo_enable_subcommand() {
         let cli = Cli::parse_from(["cc-switch", "skills", "repos", "enable", "foo/bar"]);
 
