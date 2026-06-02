@@ -782,6 +782,7 @@ requires_openai_auth = true
     #[test]
     fn cli_gemini_api_key_settings_match_tui_env_shape() {
         let cfg = build_gemini_api_key_settings_config(
+            None,
             "AIza-updated",
             "https://generativelanguage.googleapis.com",
             "gemini-3-pro-preview",
@@ -801,13 +802,87 @@ requires_openai_auth = true
 
     #[test]
     fn cli_gemini_oauth_settings_match_tui_empty_env_shape() {
-        let cfg = build_gemini_oauth_settings_config();
+        let cfg = build_gemini_oauth_settings_config(None);
 
         assert_eq!(cfg, json!({ "env": {} }));
         assert!(
             cfg.get("config").is_none(),
             "Gemini OAuth settings should not carry config or model fields"
         );
+    }
+
+    #[test]
+    fn cli_gemini_api_key_settings_preserve_settings_siblings() {
+        let current = json!({
+            "env": {
+                "GEMINI_API_KEY": "AIza-old",
+                "GOOGLE_GEMINI_BASE_URL": "https://old.example",
+                "GEMINI_BASE_URL": "https://legacy.example",
+                "GEMINI_MODEL": "old-model",
+                "EXTRA_ENV": "keep"
+            },
+            "config": {
+                "safetySettings": [
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_NONE"
+                    }
+                ]
+            },
+            "unknownSibling": {
+                "keep": true
+            }
+        });
+
+        let cfg = build_gemini_api_key_settings_config(
+            Some(&current),
+            "AIza-updated",
+            "https://generativelanguage.googleapis.com",
+            "gemini-3-pro-preview",
+        );
+
+        assert_eq!(cfg["env"]["GEMINI_API_KEY"], "AIza-updated");
+        assert_eq!(
+            cfg["env"]["GOOGLE_GEMINI_BASE_URL"],
+            "https://generativelanguage.googleapis.com"
+        );
+        assert_eq!(cfg["env"]["GEMINI_MODEL"], "gemini-3-pro-preview");
+        assert_eq!(cfg["env"]["EXTRA_ENV"], "keep");
+        assert_eq!(cfg["env"]["GEMINI_BASE_URL"], "https://legacy.example");
+        assert_eq!(
+            cfg["config"]["safetySettings"][0]["threshold"],
+            "BLOCK_NONE"
+        );
+        assert_eq!(cfg["unknownSibling"]["keep"], true);
+    }
+
+    #[test]
+    fn cli_gemini_oauth_settings_preserve_siblings_and_clear_gemini_env() {
+        let current = json!({
+            "env": {
+                "GEMINI_API_KEY": "AIza-old",
+                "GOOGLE_GEMINI_BASE_URL": "https://old.example",
+                "GEMINI_BASE_URL": "https://legacy.example",
+                "GEMINI_MODEL": "old-model",
+                "EXTRA_ENV": "keep"
+            },
+            "config": {
+                "safetySettings": []
+            },
+            "unknownSibling": {
+                "keep": true
+            }
+        });
+
+        let cfg = build_gemini_oauth_settings_config(Some(&current));
+
+        assert!(cfg["env"].get("GEMINI_API_KEY").is_none());
+        assert!(cfg["env"].get("GOOGLE_GEMINI_BASE_URL").is_none());
+        assert!(cfg["env"].get("GEMINI_BASE_URL").is_none());
+        assert!(cfg["env"].get("GEMINI_MODEL").is_none());
+        assert_eq!(cfg["env"]["EXTRA_ENV"], "keep");
+        assert_eq!(cfg["config"]["safetySettings"], json!([]));
+        assert_eq!(cfg["unknownSibling"]["keep"], true);
     }
 
     #[test]
@@ -1813,16 +1888,50 @@ fn build_codex_settings_config_from_prompt(
     Value::Object(settings_obj)
 }
 
-fn build_gemini_oauth_settings_config() -> Value {
-    json!({ "env": {} })
+fn build_gemini_oauth_settings_config(current: Option<&Value>) -> Value {
+    let mut settings_obj = current
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let env_value = settings_obj
+        .entry("env".to_string())
+        .or_insert_with(|| json!({}));
+    if !env_value.is_object() {
+        *env_value = json!({});
+    }
+    let env_obj = env_value
+        .as_object_mut()
+        .expect("Gemini env settings must be an object");
+    env_obj.remove("GEMINI_API_KEY");
+    env_obj.remove("GOOGLE_GEMINI_BASE_URL");
+    env_obj.remove("GEMINI_BASE_URL");
+    env_obj.remove("GEMINI_MODEL");
+    Value::Object(settings_obj)
 }
 
-fn build_gemini_api_key_settings_config(api_key: &str, base_url: &str, model: &str) -> Value {
-    let mut env = Map::new();
-    set_or_remove_trimmed(&mut env, "GEMINI_API_KEY", api_key);
-    set_or_remove_trimmed(&mut env, "GOOGLE_GEMINI_BASE_URL", base_url);
-    set_or_remove_trimmed(&mut env, "GEMINI_MODEL", model);
-    json!({ "env": env })
+fn build_gemini_api_key_settings_config(
+    current: Option<&Value>,
+    api_key: &str,
+    base_url: &str,
+    model: &str,
+) -> Value {
+    let mut settings_obj = current
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let env_value = settings_obj
+        .entry("env".to_string())
+        .or_insert_with(|| json!({}));
+    if !env_value.is_object() {
+        *env_value = json!({});
+    }
+    let env = env_value
+        .as_object_mut()
+        .expect("Gemini env settings must be an object");
+    set_or_remove_trimmed(env, "GEMINI_API_KEY", api_key);
+    set_or_remove_trimmed(env, "GOOGLE_GEMINI_BASE_URL", base_url);
+    set_or_remove_trimmed(env, "GEMINI_MODEL", model);
+    Value::Object(settings_obj)
 }
 
 fn build_codex_official_settings_config(current: Option<&Value>) -> Result<Value, AppError> {
@@ -3345,7 +3454,7 @@ fn prompt_gemini_config(current: Option<&Value>) -> Result<Value, AppError> {
 
     if auth_type == google_oauth {
         println!("{}", texts::use_google_oauth_warning().yellow());
-        Ok(build_gemini_oauth_settings_config())
+        Ok(build_gemini_oauth_settings_config(current))
     } else {
         // Generic API Key (统一处理所有 API Key 供应商，包括 PackyCode)
         let api_key = if let Some(current_key) = current
@@ -3406,7 +3515,7 @@ fn prompt_gemini_config(current: Option<&Value>) -> Result<Value, AppError> {
         };
 
         Ok(build_gemini_api_key_settings_config(
-            &api_key, &base_url, &model,
+            current, &api_key, &base_url, &model,
         ))
     }
 }
