@@ -356,6 +356,46 @@ mod tests {
     }
 
     #[test]
+    fn parses_settings_codex_history_enable_subcommand() {
+        let cli = Cli::parse_from([
+            "cc-switch",
+            "settings",
+            "codex-history",
+            "enable",
+            "--migrate-existing",
+        ]);
+
+        match cli.command {
+            Some(Commands::Settings(super::commands::settings::SettingsCommand::CodexHistory(
+                super::commands::settings::CodexHistoryCommand::Enable { migrate_existing },
+            ))) => {
+                assert!(migrate_existing);
+            }
+            _ => panic!("expected settings codex-history enable command"),
+        }
+    }
+
+    #[test]
+    fn parses_settings_codex_history_disable_restore_subcommand() {
+        let cli = Cli::parse_from([
+            "cc-switch",
+            "settings",
+            "codex-history",
+            "disable",
+            "--restore",
+        ]);
+
+        match cli.command {
+            Some(Commands::Settings(super::commands::settings::SettingsCommand::CodexHistory(
+                super::commands::settings::CodexHistoryCommand::Disable { restore },
+            ))) => {
+                assert!(restore);
+            }
+            _ => panic!("expected settings codex-history disable command"),
+        }
+    }
+
+    #[test]
     fn parses_failover_enable_subcommand() {
         let cli = Cli::parse_from(["cc-switch", "failover", "enable"]);
 

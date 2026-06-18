@@ -37,6 +37,49 @@ pub use common::migrate_legacy_codex_config;
 #[cfg(test)]
 use common::strip_codex_common_config_from_full_text;
 
+/// 统一会话开关变更后，立即按新开关状态重写当前官方 Codex 供应商的
+/// live 配置，使开关即时生效（无需等下一次切换）。
+pub fn reapply_current_codex_official_live(state: &AppState) -> Result<bool, AppError> {
+    let current_id = ProviderService::current(state, AppType::Codex)?;
+    if current_id.is_empty() {
+        return Ok(false);
+    }
+    let providers = state.db.get_all_providers(AppType::Codex.as_str())?;
+    let Some(provider) = providers.get(&current_id) else {
+        return Ok(false);
+    };
+    if provider.category.as_deref() != Some("official") {
+        return Ok(false);
+    }
+
+    let has_live_backup =
+        futures::executor::block_on(state.db.get_live_backup(AppType::Codex.as_str()))
+            .ok()
+            .flatten()
+            .is_some();
+    let live_taken_over = state
+        .proxy_service
+        .detect_takeover_in_live_config_for_app(&AppType::Codex);
+    if has_live_backup || live_taken_over {
+        futures::executor::block_on(
+            state
+                .proxy_service
+                .update_live_backup_from_provider(AppType::Codex.as_str(), provider),
+        )
+        .map_err(|e| AppError::Message(format!("更新 Live 备份失败: {e}")))?;
+        return Ok(true);
+    }
+
+    let common_config_snippet = state.db.get_config_snippet(AppType::Codex.as_str())?;
+    ProviderService::write_live_snapshot(
+        &AppType::Codex,
+        provider,
+        common_config_snippet.as_deref(),
+        true,
+    )?;
+    Ok(true)
+}
+
 /// 供应商相关业务逻辑
 pub struct ProviderService;
 
@@ -958,6 +1001,18 @@ impl ProviderService {
                         "Failed to restore Codex settings while refreshing '{}': {err}",
                         provider.id
                     );
+                }
+                if Self::codex_live_write_category(&provider) == Some("official") {
+                    if let Err(err) =
+                        crate::codex_config::strip_codex_unified_session_bucket_from_settings(
+                            &mut settings_for_storage,
+                        )
+                    {
+                        log::warn!(
+                            "Failed to strip unified session bucket while refreshing '{}': {err}",
+                            provider.id
+                        );
+                    }
                 }
                 let mut snapshot_provider = provider.clone();
                 snapshot_provider.settings_config = settings_for_storage;
@@ -2187,6 +2242,11 @@ impl ProviderService {
             }
             .to_string(),
         );
+        if matches!(app_type, AppType::Codex) && provider.category.as_deref() == Some("official") {
+            crate::codex_config::strip_codex_unified_session_bucket_from_settings(
+                &mut provider.settings_config,
+            )?;
+        }
 
         state.db.save_provider(app_type.as_str(), &provider)?;
         state

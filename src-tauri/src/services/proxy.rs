@@ -1589,7 +1589,12 @@ impl ProxyService {
         original_live: &Value,
         provider: &Provider,
     ) -> Result<Value, String> {
-        let provider_snapshot = self.build_live_snapshot_from_provider(app_type, provider)?;
+        let mut provider_snapshot = self.build_live_snapshot_from_provider(app_type, provider)?;
+        Self::apply_codex_unified_session_bucket_to_backup(
+            app_type,
+            provider,
+            &mut provider_snapshot,
+        )?;
         Self::merge_live_backup_snapshot(
             app_type,
             Some(original_live),
@@ -2047,7 +2052,13 @@ impl ProxyService {
         provider: &Provider,
     ) -> Result<(), String> {
         let app_type_enum = Self::takeover_app_from_str(app_type)?;
-        let backup_snapshot = self.build_live_snapshot_from_provider(&app_type_enum, provider)?;
+        let mut backup_snapshot =
+            self.build_live_snapshot_from_provider(&app_type_enum, provider)?;
+        Self::apply_codex_unified_session_bucket_to_backup(
+            &app_type_enum,
+            provider,
+            &mut backup_snapshot,
+        )?;
         let existing_backup_value = self.load_live_backup_value(&app_type_enum).await?;
         let backup_snapshot = Self::merge_live_backup_snapshot(
             &app_type_enum,
@@ -2066,7 +2077,12 @@ impl ProxyService {
         resolution: live_merge::ConflictResolution<'_>,
     ) -> Result<Value, String> {
         let app_type = Self::takeover_app_from_str(app_type)?;
-        let backup_snapshot = self.build_live_snapshot_from_provider(&app_type, provider)?;
+        let mut backup_snapshot = self.build_live_snapshot_from_provider(&app_type, provider)?;
+        Self::apply_codex_unified_session_bucket_to_backup(
+            &app_type,
+            provider,
+            &mut backup_snapshot,
+        )?;
         let existing_backup_value = self.load_live_backup_value(&app_type).await?;
         Self::merge_live_backup_snapshot(
             &app_type,
@@ -2095,6 +2111,24 @@ impl ProxyService {
                 })
             })
             .transpose()
+    }
+
+    fn apply_codex_unified_session_bucket_to_backup(
+        app_type: &AppType,
+        provider: &Provider,
+        backup_snapshot: &mut Value,
+    ) -> Result<(), String> {
+        if !matches!(app_type, AppType::Codex) {
+            return Ok(());
+        }
+
+        crate::codex_config::apply_codex_unified_session_bucket_to_settings(
+            crate::services::provider::ProviderService::codex_live_write_category(provider),
+            backup_snapshot,
+        )
+        .map_err(|error| {
+            format!("apply Codex unified session bucket to live backup failed: {error}")
+        })
     }
 
     fn merge_live_backup_snapshot(

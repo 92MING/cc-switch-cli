@@ -171,6 +171,24 @@ impl AppState {
             }
         }
 
+        match crate::codex_history_migration::maybe_migrate_codex_official_history_to_unified_bucket(
+        ) {
+            Ok(outcome) => {
+                if let Some(reason) = outcome.skipped_reason {
+                    log::debug!("○ Codex official history unify migration skipped: {reason}");
+                } else {
+                    log::info!(
+                        "✓ Codex official history unify migration completed: jsonl_files={}, state_rows={}",
+                        outcome.migrated_jsonl_files,
+                        outcome.migrated_state_rows
+                    );
+                }
+            }
+            Err(error) => {
+                log::warn!("✗ Codex official history unify migration failed: {error}");
+            }
+        }
+
         if let Err(error) = self.refresh_config_from_db() {
             log::warn!("✗ Failed to refresh config after Codex provider bucket migration: {error}");
         }

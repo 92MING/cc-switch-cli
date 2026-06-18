@@ -338,6 +338,11 @@ impl ConfigService {
                     &provider.settings_config,
                     restore_provider_token,
                 )?;
+                if ProviderService::codex_live_write_category(provider) == Some("official") {
+                    crate::codex_config::strip_codex_unified_session_bucket_from_settings(
+                        &mut restored,
+                    )?;
+                }
                 target.settings_config = ProviderService::normalize_settings_config_for_storage(
                     &AppType::Codex,
                     provider,
