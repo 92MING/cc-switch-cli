@@ -6,6 +6,7 @@ use crate::openclaw_config::OpenClawDefaultModel;
 use crate::proxy::providers::get_claude_api_format;
 use crate::services::provider::ProviderSortUpdate;
 use crate::services::ProviderService;
+use crate::store::AppState;
 
 use super::super::app::{ConfirmAction, ConfirmOverlay, Overlay, ToastKind};
 use super::super::data::load_state;
@@ -23,6 +24,10 @@ fn active_proxy_failover_queue_guard_message() -> &'static str {
     )
 }
 
+fn load_existing_state() -> Result<AppState, AppError> {
+    AppState::try_open_existing()
+}
+
 fn provider_is_last_active_failover_queue_entry(
     ctx: &RuntimeActionContext<'_>,
     provider_id: &str,
@@ -31,7 +36,7 @@ fn provider_is_last_active_failover_queue_entry(
         return Ok(false);
     }
 
-    let state = load_state()?;
+    let state = load_existing_state()?;
     let app_key = ctx.app.app_type.as_str();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -100,12 +105,12 @@ fn refresh_provider_data_after_write_with_config(
 pub(super) fn switch(ctx: &mut RuntimeActionContext<'_>, id: String) -> Result<(), AppError> {
     // Upstream parity: provider switch is a clean write; no live-conflict
     // preview/overlay is surfaced.
-    let state = load_state()?;
+    let state = load_existing_state()?;
     do_switch(ctx, state, id)
 }
 
 pub(super) fn import_live_config(ctx: &mut RuntimeActionContext<'_>) -> Result<(), AppError> {
-    let state = load_state()?;
+    let state = load_existing_state()?;
     let imported = ProviderService::import_live_config(&state, ctx.app.app_type.clone())? > 0;
 
     refresh_provider_data_after_write(ctx, &state)?;
@@ -217,7 +222,7 @@ pub(super) fn set_failover_queue(
         return Err(AppError::InvalidInput(format!("Provider not found: {id}")));
     }
 
-    let state = load_state()?;
+    let state = load_existing_state()?;
     if enabled {
         state
             .db
@@ -311,7 +316,7 @@ pub(super) fn move_failover_queue(
         })
         .collect::<Vec<_>>();
 
-    let state = load_state()?;
+    let state = load_existing_state()?;
     ProviderService::update_sort_order(&state, ctx.app.app_type.clone(), updates)?;
     refresh_provider_data_after_write(ctx, &state)?;
     ctx.app.push_toast(
@@ -1291,6 +1296,16 @@ mod tests {
         let queue = state.db.get_failover_queue("claude").expect("read queue");
         assert_eq!(queue[0].provider_id, "second");
         assert_eq!(queue[1].provider_id, "first");
+    }
+
+    #[test]
+    #[serial(home_settings)]
+    fn load_existing_state_opens_database_without_startup_initialization() {
+        let temp_home = TempDir::new().expect("create temp home");
+        let _env = EnvGuard::set_home(temp_home.path());
+
+        let state = AppState::try_open_existing().expect("open existing state");
+        assert!(state.db.path().expect("db path").ends_with("cc-switch.db"));
     }
 
     #[test]

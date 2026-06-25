@@ -8,6 +8,7 @@ INSTALL_DIR="${CC_SWITCH_INSTALL_DIR:-$HOME/.local/bin}"
 TARGET="${INSTALL_DIR}/${BIN_NAME}"
 TARGET_DIR="${CC_SWITCH_TARGET_DIR:-${INSTALL_DIR}}"
 TARGET_NAME="${CC_SWITCH_TARGET_NAME:-${BIN_NAME}}"
+BUILD_TARGET_DIR="${CC_SWITCH_BUILD_TARGET_DIR:-${SRC_TAURI_DIR}/target}"
 FORCE_OVERWRITE="${CC_SWITCH_FORCE:-0}"
 
 info()  { printf '  \033[1;32minfo\033[0m: %s\n' "$*"; }
@@ -72,7 +73,7 @@ confirm_overwrite_if_needed() {
 }
 
 build_release() {
-  local build_dir built_binary
+  local built_binary
 
   need_cmd cargo
 
@@ -81,11 +82,10 @@ build_release() {
     exit 1
   fi
 
-  build_dir="$(mktemp -d "${TMPDIR:-/tmp}/cc-switch-build.XXXXXX")"
   info "Building from source in ${SRC_TAURI_DIR}"
-  cargo build --release --manifest-path "${SRC_TAURI_DIR}/Cargo.toml" --target-dir "${build_dir}"
+  cargo build --release --manifest-path "${SRC_TAURI_DIR}/Cargo.toml" --target-dir "${BUILD_TARGET_DIR}"
 
-  built_binary="${build_dir}/release/${BIN_NAME}"
+  built_binary="${BUILD_TARGET_DIR}/release/${BIN_NAME}"
   if [[ ! -f "${built_binary}" ]]; then
     err "Built binary not found: ${built_binary}"
     exit 1
@@ -96,8 +96,6 @@ build_release() {
   chmod 755 "${TARGET}.new"
   mv -f "${TARGET}.new" "${TARGET}"
   chmod 755 "${TARGET}"
-
-  rm -rf "${build_dir}"
 }
 
 main() {

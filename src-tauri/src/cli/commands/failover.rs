@@ -70,7 +70,7 @@ pub fn execute(cmd: FailoverCommand, app: Option<AppType>) -> Result<(), AppErro
 }
 
 fn get_state() -> Result<AppState, AppError> {
-    AppState::try_new()
+    AppState::try_open_existing()
 }
 
 fn create_runtime() -> Result<tokio::runtime::Runtime, AppError> {
