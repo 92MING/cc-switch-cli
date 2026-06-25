@@ -176,6 +176,16 @@ curl -fsSL https://github.com/SaladDay/cc-switch-cli/releases/latest/download/in
 - 如果目标文件已存在，安装脚本会在 TTY 中提示确认；在非交互环境中，只有设置 `CC_SWITCH_FORCE=1` 才会覆盖。
 - Linux 如需 glibc 构建，可设置 `CC_SWITCH_LINUX_LIBC=glibc`。
 
+### 方法 2：本地源码安装（覆盖已有二进制）
+
+如果你已经 clone 了仓库，并且想让本地编译结果直接替换当前安装的 `cc-switch`，运行：
+
+```bash
+./install-from-source.sh
+```
+
+这个脚本会在 `src-tauri/` 下执行 `cargo build --release`，然后默认覆盖安装到 `~/.local/bin/cc-switch`。可以通过 `CC_SWITCH_INSTALL_DIR` 改安装目录。
+
 <details>
 <summary>手动安装</summary>
 

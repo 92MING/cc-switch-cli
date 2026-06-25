@@ -176,6 +176,16 @@ This installs `cc-switch` to `~/.local/bin`. Set `CC_SWITCH_INSTALL_DIR` to chan
 - If the target already exists, the installer prompts in TTY and refuses to overwrite in non-interactive shells unless `CC_SWITCH_FORCE=1` is set.
 - On Linux, set `CC_SWITCH_LINUX_LIBC=glibc` if you need the glibc build.
 
+### Method 2: Local Source Install (overwrite existing binary)
+
+If you already cloned the repo and want your local build to replace an existing `cc-switch`, run:
+
+```bash
+./install-from-source.sh
+```
+
+This builds `src-tauri/` with `cargo build --release` and overwrites the installed binary in `~/.local/bin/cc-switch` by default. Set `CC_SWITCH_INSTALL_DIR` to use a different install location.
+
 <details>
 <summary>Manual Installation</summary>
 
