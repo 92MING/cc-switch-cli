@@ -493,6 +493,41 @@ impl Database {
         })
     }
 
+    /// 打开当前 schema 的读写连接。
+    ///
+    /// 用于已有数据库上的交互式写入路径；不会创建目录、建表、迁移、seed 或执行启动维护。
+    pub fn open_existing_current_schema() -> Result<Self, AppError> {
+        let db_path = database_path()?;
+        if !db_path.exists() {
+            return Err(AppError::Database(format!(
+                "database is not initialized: {}",
+                db_path.display()
+            )));
+        }
+        #[cfg(unix)]
+        validate_existing_database_file(&db_path)?;
+
+        let conn = Connection::open_with_flags(&db_path, database_open_flags())
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        Self::configure_connection(&conn)?;
+
+        let version = Self::get_user_version(&conn)?;
+        if version > SCHEMA_VERSION {
+            return Err(Self::future_schema_error(version));
+        }
+        if version != SCHEMA_VERSION {
+            return Err(AppError::Database(format!(
+                "database schema version {version} requires initialization before writes; current schema version is {SCHEMA_VERSION}"
+            )));
+        }
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+            runtime_key: format!("file:{}", db_path.display()),
+            db_path: Some(db_path),
+        })
+    }
+
     /// 创建内存数据库（用于测试）
     pub fn memory() -> Result<Self, AppError> {
         static NEXT_MEMORY_DB_ID: AtomicU64 = AtomicU64::new(1);

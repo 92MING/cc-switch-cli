@@ -195,6 +195,11 @@ impl CircuitBreaker {
         }
     }
 
+    pub async fn record_failure_and_open(&self, used_half_open_permit: bool) {
+        self.record_failure(used_half_open_permit).await;
+        self.transition_to_open().await;
+    }
+
     #[allow(dead_code)]
     pub async fn get_state(&self) -> CircuitState {
         *self.state.read().await

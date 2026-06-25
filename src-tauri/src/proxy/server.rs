@@ -157,6 +157,24 @@ impl ProxyServerState {
         status.last_error = Some(message);
     }
 
+    pub async fn record_provider_failure(
+        &self,
+        app_type: &AppType,
+        provider: &Provider,
+        error_message: String,
+    ) {
+        let _ = self
+            .provider_router
+            .record_result(
+                &provider.id,
+                app_type.as_str(),
+                false,
+                false,
+                Some(error_message),
+            )
+            .await;
+    }
+
     pub async fn record_upstream_failure(
         &self,
         status_code: reqwest::StatusCode,

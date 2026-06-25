@@ -369,3 +369,33 @@ async fn test_record_result_uses_app_failure_threshold_for_health_updates() {
     assert_eq!(second_health.consecutive_failures, 2);
     assert_eq!(second_health.last_error.as_deref(), Some("fail-2"));
 }
+
+#[tokio::test]
+#[serial(home_settings)]
+async fn record_result_force_opens_breaker_for_capacity_errors() {
+    let _home = TempHome::new();
+    let db = Arc::new(Database::memory().unwrap());
+
+    let provider = Provider::with_id("a".to_string(), "Provider A".to_string(), json!({}), None);
+    db.save_provider("claude", &provider).unwrap();
+
+    let router = ProviderRouter::new(db.clone());
+    router
+        .record_result(
+            "a",
+            "claude",
+            false,
+            false,
+            Some("Selected model is at capacity".to_string()),
+        )
+        .await
+        .unwrap();
+
+    assert!(!router.allow_provider_request("a", "claude").await.allowed);
+    let health = db.get_provider_health("a", "claude").await.unwrap();
+    assert!(!health.is_healthy);
+    assert_eq!(
+        health.last_error.as_deref(),
+        Some("Selected model is at capacity")
+    );
+}

@@ -841,7 +841,7 @@ fn submit_provider_edit(
         return Ok(());
     }
 
-    let state = load_state()?;
+    let state = crate::store::AppState::try_open_existing()?;
     let result = ProviderService::update(&state, ctx.app.app_type.clone(), provider);
 
     if let Err(err) = result {

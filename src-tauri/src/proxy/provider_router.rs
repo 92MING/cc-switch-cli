@@ -103,6 +103,9 @@ impl ProviderRouter {
             .await
             .map(|config| config.circuit_failure_threshold)
             .unwrap_or(5);
+        let force_open = error_msg
+            .as_deref()
+            .is_some_and(should_force_open_for_failure);
 
         let breaker = self
             .get_or_create_circuit_breaker(&format!("{app_type}:{provider_id}"))
@@ -110,6 +113,8 @@ impl ProviderRouter {
 
         if success {
             breaker.record_success(used_half_open_permit).await;
+        } else if force_open {
+            breaker.record_failure_and_open(used_half_open_permit).await;
         } else {
             breaker.record_failure(used_half_open_permit).await;
         }
@@ -120,7 +125,7 @@ impl ProviderRouter {
                 app_type,
                 success,
                 error_msg,
-                failure_threshold,
+                if force_open { 1 } else { failure_threshold },
             )
             .await
             .map_err(|error| ProxyError::DatabaseError(error.to_string()))
@@ -238,6 +243,15 @@ impl ProviderRouter {
         breakers.insert(key.to_string(), breaker.clone());
         breaker
     }
+}
+
+fn should_force_open_for_failure(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("capacity")
+        || message.contains("overloaded")
+        || message.contains("too many requests")
+        || message.contains("rate limit")
+        || message.contains("temporarily unavailable")
 }
 
 #[cfg(test)]

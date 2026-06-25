@@ -89,6 +89,13 @@ impl AppState {
         Self::from_parts(db, config)
     }
 
+    /// 打开现有数据库，但不执行启动时的 legacy/common-config 写入迁移。
+    pub fn try_open_existing() -> Result<Self, AppError> {
+        let db = Arc::new(Database::open_existing_current_schema()?);
+        let config = export_db_to_multi_app_config(&db)?;
+        Self::from_parts(db, config)
+    }
+
     /// 打开只读数据库快照，用于 TUI 后台热刷新等非初始化路径。
     pub fn try_open_snapshot() -> Result<Self, AppError> {
         let db = Arc::new(Database::open_readonly_current_schema()?);

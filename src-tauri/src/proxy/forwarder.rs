@@ -277,6 +277,8 @@ impl RequestForwarder {
                         }
                         AttemptDecision::ProviderFailure => {
                             if !bypass_circuit_breaker {
+                                let failure_message =
+                                    format!("upstream returned {}", response.status().as_u16());
                                 let _ = self
                                     .router
                                     .record_result(
@@ -284,10 +286,7 @@ impl RequestForwarder {
                                         app_type.as_str(),
                                         permit.used_half_open_permit,
                                         false,
-                                        Some(format!(
-                                            "upstream returned {}",
-                                            response.status().as_u16()
-                                        )),
+                                        Some(failure_message),
                                     )
                                     .await;
                             }
@@ -523,6 +522,10 @@ impl RequestForwarder {
                         }
                         AttemptDecision::ProviderFailure => {
                             if !bypass_circuit_breaker {
+                                let failure_message = upstream_failure_message(
+                                    response.status.as_u16(),
+                                    &response.body,
+                                );
                                 let _ = self
                                     .router
                                     .record_result(
@@ -530,10 +533,7 @@ impl RequestForwarder {
                                         app_type.as_str(),
                                         permit.used_half_open_permit,
                                         false,
-                                        Some(format!(
-                                            "upstream returned {}",
-                                            response.status.as_u16()
-                                        )),
+                                        Some(failure_message),
                                     )
                                     .await;
                             }
@@ -739,11 +739,14 @@ impl RequestForwarder {
                                 }
                             }
 
+                            let attempt_decision = classify_buffered_upstream_response(
+                                app_type,
+                                &buffered_response,
+                                rectifier_retried,
+                            );
+
                             return Ok(StreamingAttemptOutcome {
-                                attempt_decision: classify_upstream_response(
-                                    buffered_response.status,
-                                    rectifier_retried,
-                                ),
+                                attempt_decision,
                                 response: StreamingResponse::Buffered(buffered_response),
                             });
                         }
@@ -915,11 +918,14 @@ impl RequestForwarder {
                             }
                         }
 
+                        let attempt_decision = classify_buffered_upstream_response(
+                            app_type,
+                            &buffered_response,
+                            rectifier_retried,
+                        );
+
                         return Ok(BufferedAttemptOutcome {
-                            attempt_decision: classify_upstream_response(
-                                buffered_response.status,
-                                rectifier_retried,
-                            ),
+                            attempt_decision,
                             response: buffered_response,
                         });
                     }
@@ -1153,6 +1159,42 @@ fn classify_upstream_response(
         400 | 422 => AttemptDecision::ProviderFailure,
         _ => AttemptDecision::ProviderFailure,
     }
+}
+
+fn classify_buffered_upstream_response(
+    app_type: &AppType,
+    response: &BufferedResponse,
+    rectifier_retried: bool,
+) -> AttemptDecision {
+    if *app_type == AppType::Claude {
+        if let AttemptDecision::ProviderFailure = classify_claude_upstream_error(&response.body) {
+            return AttemptDecision::ProviderFailure;
+        }
+    }
+
+    classify_upstream_response(response.status, rectifier_retried)
+}
+
+fn classify_claude_upstream_error(body: &[u8]) -> AttemptDecision {
+    let message = extract_upstream_error_message(body)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if message.contains("capacity")
+        || message.contains("overloaded")
+        || message.contains("too many requests")
+        || message.contains("rate limit")
+    {
+        return AttemptDecision::ProviderFailure;
+    }
+
+    AttemptDecision::NeutralRelease
+}
+
+fn upstream_failure_message(status: u16, body: &[u8]) -> String {
+    extract_upstream_error_message(body)
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or_else(|| format!("upstream returned {status}"))
 }
 
 #[cfg(test)]

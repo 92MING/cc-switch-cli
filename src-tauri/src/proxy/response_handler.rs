@@ -241,19 +241,43 @@ impl StreamingOutcomeRecorder {
             .and_then(StreamCompletion::outcome)
         {
             Some(Err(message)) => {
+                let should_failover = stream_error_should_failover(&message);
+                let success_sync = self.success_sync.clone();
+                let error_message = message.clone();
                 tokio::spawn(async move {
                     if let Some(request_log) = request_log.as_ref() {
                         log_error_request(
                             &state,
                             request_log,
-                            &ProxyError::RequestFailed(message.clone()),
+                            &ProxyError::RequestFailed(error_message.clone()),
                         )
                         .await;
                     }
                     state
                         .record_estimated_output_tokens(estimated_output_tokens)
                         .await;
-                    state.record_request_error_message(message).await;
+                    state
+                        .record_request_error_message(error_message.clone())
+                        .await;
+                    if should_failover {
+                        if let Some(success_sync) = success_sync.as_ref() {
+                            state
+                                .record_provider_failure(
+                                    &success_sync.app_type,
+                                    &success_sync.provider,
+                                    error_message.clone(),
+                                )
+                                .await;
+                        } else if let Some(request_log) = request_log.as_ref() {
+                            state
+                                .record_provider_failure(
+                                    &request_log.app_type,
+                                    &request_log.provider,
+                                    error_message.clone(),
+                                )
+                                .await;
+                        }
+                    }
                 });
             }
             Some(Ok(())) => {
@@ -348,6 +372,15 @@ impl Drop for StreamingOutcomeRecorder {
     fn drop(&mut self) {
         self.finish();
     }
+}
+
+fn stream_error_should_failover(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("capacity")
+        || message.contains("overloaded")
+        || message.contains("too many requests")
+        || message.contains("rate limit")
+        || message.contains("temporarily unavailable")
 }
 
 pub fn proxy_error_response(error: ProxyError) -> Response {
